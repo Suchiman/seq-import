@@ -64,13 +64,16 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="EventConverter.cs" />
     <Compile Include="HttpImporter.cs" />
     <Compile Include="LogBuffer.cs" />
     <Compile Include="LogBufferEntry.cs" />
     <Compile Include="NonBindingSerializationBinder.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="PropertyEnricher.cs" />
     <Compile Include="SeqImportConfig.cs" />
+    <Compile Include="StreamingEventReader.cs" />
     <Compile Include="UnclosableStreamWrapper.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -6,5 +6,6 @@
         public ulong EventBodyLimitBytes { get; set; }
         public ulong RawPayloadLimitBytes { get; set; }
         public string ApiKey { get; set; }
+        public bool CompactJson { get; set; }
     }
 }

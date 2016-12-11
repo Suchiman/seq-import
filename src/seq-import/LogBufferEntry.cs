@@ -1,6 +1,6 @@
 namespace seq_import
 {
-    class LogBufferEntry
+    struct LogBufferEntry
     {
         public ulong Key;
         public byte[] Value;

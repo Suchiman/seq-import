@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -13,6 +14,8 @@ namespace seq_import
     {
         const string ApiKeyHeaderName = "X-Seq-ApiKey";
         const string BulkUploadResource = "api/events/raw";
+
+        static readonly UTF8Encoding _utf8NoBom = new UTF8Encoding(false);
 
         readonly LogBuffer _logBuffer;
         readonly SeqImportConfig _importConfig;
@@ -40,21 +43,37 @@ namespace seq_import
         {
             var sendingSingles = 0;
             var sent = 0L;
+
+            var eventPayloadLimitBytes = _importConfig.CompactJson ? _importConfig.RawPayloadLimitBytes : _importConfig.RawPayloadLimitBytes - 13; // prologue and epilogue overhead, none for compactJson
+            var overheadPerEvent = _importConfig.CompactJson ? 2 : 1; //compact: \r\n vs. defaultJson: ,
+
+            var payloadBuffer = new MemoryStream();
+            var availableBuffer = new List<LogBufferEntry>();
             do
             {
-                var available = _logBuffer.Peek((int)_importConfig.RawPayloadLimitBytes);
-                if (available.Length == 0)
+                payloadBuffer.SetLength(0);
+                availableBuffer.Clear();
+
+                _logBuffer.Peek(availableBuffer, (int)eventPayloadLimitBytes, overheadPerEvent, (int)_importConfig.EventBodyLimitBytes);
+                if (availableBuffer.Count == 0)
                 {
                     break;
                 }
 
-                Stream payload;
                 ulong lastIncluded;
-                MakePayload(available, sendingSingles > 0, out payload, out lastIncluded);
-                var len = payload.Length;
+                if (_importConfig.CompactJson)
+                {
+                    MakeCompactJsonPayload(availableBuffer, sendingSingles > 0, payloadBuffer, out lastIncluded);
+                }
+                else
+                {
+                    MakeDefaultJsonPayload(availableBuffer, sendingSingles > 0, payloadBuffer, out lastIncluded);
+                }
+                var len = payloadBuffer.Length;
 
-                var content = new StreamContent(new UnclosableStreamWrapper(payload));
-                content.Headers.ContentType = new MediaTypeHeaderValue("application/json")
+                payloadBuffer.Position = 0;
+                var content = new StreamContent(new UnclosableStreamWrapper(payloadBuffer));
+                content.Headers.ContentType = new MediaTypeHeaderValue(_importConfig.CompactJson ? "application/vnd.serilog.clef" : "application/json")
                 {
                     CharSet = Encoding.UTF8.WebName
                 };
@@ -72,13 +91,13 @@ namespace seq_import
                     if (sendingSingles > 0)
                         sendingSingles--;
                 }
-                else if (result.StatusCode == HttpStatusCode.BadRequest || 
+                else if (result.StatusCode == HttpStatusCode.BadRequest ||
                     result.StatusCode == HttpStatusCode.RequestEntityTooLarge)
                 {
                     if (sendingSingles != 0)
                     {
-                        payload.Position = 0;
-                        var payloadText = new StreamReader(payload, Encoding.UTF8).ReadToEnd();
+                        payloadBuffer.Position = 0;
+                        var payloadText = new StreamReader(payloadBuffer, Encoding.UTF8).ReadToEnd();
                         Log.Error("HTTP shipping failed with {StatusCode}: {Result}; payload was {InvalidPayload}", result.StatusCode, await result.Content.ReadAsStringAsync(), payloadText);
                         _logBuffer.Dequeue(lastIncluded);
                         sendingSingles = 0;
@@ -101,50 +120,62 @@ namespace seq_import
             while (true);
         }
 
-        void MakePayload(LogBufferEntry[] entries, bool oneOnly, out Stream utf8Payload, out ulong lastIncluded)
+        private static byte[] eventPrologue = _utf8NoBom.GetBytes("{\"Events\":[");
+        private static byte[] eventEpilogue = _utf8NoBom.GetBytes("]}");
+        private static byte[] comma = _utf8NoBom.GetBytes(",");
+
+        void MakeDefaultJsonPayload(List<LogBufferEntry> entries, bool oneOnly, MemoryStream payloadBuffer, out ulong lastIncluded)
         {
             if (entries == null) throw new ArgumentNullException(nameof(entries));
-            if (entries.Length == 0) throw new ArgumentException("Must contain entries");
+            if (entries.Count == 0) throw new ArgumentException("Must contain entries");
             lastIncluded = 0;
 
-            var raw = new MemoryStream();
-            var content = new StreamWriter(raw, Encoding.UTF8);
-            content.Write("{\"Events\":[");
-            content.Flush();
-            var contentRemainingBytes = (int)_importConfig.RawPayloadLimitBytes - 13; // Includes closing delims
+            payloadBuffer.Write(eventPrologue, 0, eventPrologue.Length);
 
-            var delimStart = "";
+            bool writeComma = false;
             foreach (var logBufferEntry in entries)
             {
-                if ((ulong)logBufferEntry.Value.Length > _importConfig.EventBodyLimitBytes)
+                if (writeComma)
                 {
-                    Log.Warning("Oversized event will be skipped, {Payload}", Encoding.UTF8.GetString(logBufferEntry.Value));
-                    lastIncluded = logBufferEntry.Key;
-                    continue;
+                    payloadBuffer.Write(comma, 0, comma.Length);
                 }
+                writeComma = true;
 
-                // lastIncluded indicates we've added at least one event
-                if (lastIncluded != 0 && contentRemainingBytes - (delimStart.Length + logBufferEntry.Value.Length) < 0)
-                    break;
-
-                content.Write(delimStart);
-                content.Flush();
-                contentRemainingBytes -= delimStart.Length;
-
-                raw.Write(logBufferEntry.Value, 0, logBufferEntry.Value.Length);
-                contentRemainingBytes -= logBufferEntry.Value.Length;
+                payloadBuffer.Write(logBufferEntry.Value, 0, logBufferEntry.Value.Length);
 
                 lastIncluded = logBufferEntry.Key;
 
-                delimStart = ",";
                 if (oneOnly)
                     break;
             }
 
-            content.Write("]}");
-            content.Flush();
-            raw.Position = 0;
-            utf8Payload = raw;
+            payloadBuffer.Write(eventEpilogue, 0, eventEpilogue.Length);
+        }
+
+        private static byte[] newline = _utf8NoBom.GetBytes("\r\n");
+
+        void MakeCompactJsonPayload(List<LogBufferEntry> entries, bool oneOnly, MemoryStream payloadBuffer, out ulong lastIncluded)
+        {
+            if (entries == null) throw new ArgumentNullException(nameof(entries));
+            if (entries.Count == 0) throw new ArgumentException("Must contain entries");
+            lastIncluded = 0;
+
+            bool writeNewline = false;
+            foreach (var logBufferEntry in entries)
+            {
+                if (writeNewline)
+                {
+                    payloadBuffer.Write(newline, 0, newline.Length);
+                }
+                writeNewline = true;
+
+                payloadBuffer.Write(logBufferEntry.Value, 0, logBufferEntry.Value.Length);
+
+                lastIncluded = logBufferEntry.Key;
+
+                if (oneOnly)
+                    break;
+            }
         }
     }
 }

@@ -23,6 +23,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "asset", "asset", "{604C58AE
 		asset\seq-import.ico = asset\seq-import.ico
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "seq-import.Tests", "test\seq-import.Tests\seq-import.Tests.csproj", "{88EB4856-7F63-4E02-9435-4FE8EE6BCAD1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,11 +35,16 @@ Global
 		{D3E7EC4A-5D05-475E-ACD1-05E979BC4320}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D3E7EC4A-5D05-475E-ACD1-05E979BC4320}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D3E7EC4A-5D05-475E-ACD1-05E979BC4320}.Release|Any CPU.Build.0 = Release|Any CPU
+		{88EB4856-7F63-4E02-9435-4FE8EE6BCAD1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{88EB4856-7F63-4E02-9435-4FE8EE6BCAD1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{88EB4856-7F63-4E02-9435-4FE8EE6BCAD1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{88EB4856-7F63-4E02-9435-4FE8EE6BCAD1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{D3E7EC4A-5D05-475E-ACD1-05E979BC4320} = {D0649092-5A4D-4071-A51C-0410F67E9206}
+		{88EB4856-7F63-4E02-9435-4FE8EE6BCAD1} = {9359C82A-D7EF-4977-9FE0-2A0E0094C1AE}
 	EndGlobalSection
 EndGlobal
