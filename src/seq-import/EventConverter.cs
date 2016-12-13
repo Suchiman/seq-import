@@ -74,9 +74,23 @@ namespace seq_import
 
             if (entry["Properties"] != null)
             {
-                foreach (var property in entry["Properties"])
+                foreach (var property in entry["Properties"].OfType<JProperty>())
                 {
-                    compact.Add(property);
+                    switch (property.Name)
+                    {
+                        case "@t":
+                        case "@m":
+                        case "@mt":
+                        case "@l":
+                        case "@x":
+                        case "@i":
+                        case "@r":
+                            compact["@" + property.Name] = property.Value;
+                            break;
+                        default:
+                            compact.Add(property);
+                            break;
+                    }
                 }
             }
 

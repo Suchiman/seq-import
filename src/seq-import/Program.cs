@@ -14,15 +14,14 @@ namespace seq_import
     {
         const string Usage = @"seq-import: Import JSON log files into Seq.
 Usage:
-    seq-import.exe <file> <server> [--apikey=<k>] [--compact-input] [--compact-output] [--p:<key>=<value>]
+    seq-import.exe <file> <server> [--apikey=<k>] [--raw-output] [--p:<key>=<value>]
     seq-import.exe (-h | --help)
 Options:
     -h --help           Show this screen.
     <file>              The file to import.
     <server>            The Seq server URL.
     --apikey=<k>        Seq API key.
-    --compact-input     Wether to read <file> as compact JSON.
-    --compact-output    Wether to post <file> as compact JSON to Seq.
+    --raw-output        Whether to post <file> as raw JSON to Seq.
     --p:<key>=<value>   Add tag(s) to import.
     ";
 
@@ -46,10 +45,9 @@ Options:
                     var server = arguments["<server>"].ToString();
                     var file = Normalize(arguments["<file>"]);
                     var apiKey = Normalize(arguments["--apikey"]);
-                    var compactInput = arguments["--compact-input"].IsTrue;
-                    var compactOutput = arguments["--compact-output"].IsTrue;
+                    var compactOutput = arguments["--raw-output"].IsFalse;
 
-                    await Run(server, apiKey, file, additionalTags, 256 * 1024, 1024 * 1024, compactInput, compactOutput);
+                    await Run(server, apiKey, file, additionalTags, 256 * 1024, 1024 * 1024, compactOutput);
                 }
                 catch (Exception ex)
                 {
@@ -79,11 +77,8 @@ Options:
             return string.IsNullOrWhiteSpace(s) ? null : s;
         }
 
-        static async Task Run(string server, string apiKey, string file, IDictionary<string, string> additionalTags, ulong bodyLimitBytes, ulong payloadLimitBytes, bool compactInput, bool compactOutput)
+        static async Task Run(string server, string apiKey, string file, IDictionary<string, string> additionalTags, ulong bodyLimitBytes, ulong payloadLimitBytes, bool compactOutput)
         {
-            var originalFilename = Path.GetFileName(file);
-            Log.Information("Opening JSON log file {OriginalFilename} as {JsonKind}", originalFilename, compactInput ? "CompactJson" : "DefaultJson");
-
             var importId = Guid.NewGuid();
             var tags = new Dictionary<string, object>
             {
@@ -100,10 +95,7 @@ Options:
                 }
             }
 
-            Func<JObject, JObject> eventProcessor = compactInput == compactOutput ? EventConverter.PassThrough : compactInput ? (Func<JObject, JObject>)EventConverter.ConvertToDefaultJson : EventConverter.ConvertToCompactJson;
-            Action<JObject, Dictionary<string, object>> propertyEnricher = compactOutput ? (Action<JObject, Dictionary<string, object>>)PropertyEnricher.AddPropertiesToCompactJson : PropertyEnricher.AddPropertiesToDefaultJson;
-
-            var eventReader = new StreamingEventReader(file, tags, eventProcessor, propertyEnricher);
+            var eventReader = new StreamingEventReader(file, tags, compactOutput);
 
             var shipper = new HttpImporter(new LogBuffer(eventReader), new SeqImportConfig
             {

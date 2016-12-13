@@ -24,20 +24,16 @@ namespace seq_import
 
         private string file;
         private Dictionary<string, object> tags;
-        private Func<JObject, JObject> eventProcessor;
-        private Action<JObject, Dictionary<string, object>> propertyEnricher;
+        private bool compactOutput;
 
-        public StreamingEventReader(string file, Dictionary<string, object> tags, Func<JObject, JObject> eventProcessor, Action<JObject, Dictionary<string, object>> propertyEnricher)
+        public StreamingEventReader(string file, Dictionary<string, object> tags, bool compactOutput)
         {
             if (file == null) throw new ArgumentNullException(nameof(file));
             if (tags == null) throw new ArgumentNullException(nameof(tags));
-            if (eventProcessor == null) throw new ArgumentNullException(nameof(eventProcessor));
-            if (propertyEnricher == null) throw new ArgumentNullException(nameof(propertyEnricher));
 
             this.file = file;
             this.tags = tags;
-            this.eventProcessor = eventProcessor;
-            this.propertyEnricher = propertyEnricher;
+            this.compactOutput = compactOutput;
         }
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
@@ -46,12 +42,22 @@ namespace seq_import
         {
             var encoding = new UTF8Encoding(false);
 
+            string fileName = Path.GetFileName(file);
+            Log.Information("Opening JSON log file {OriginalFilename}", fileName);
+
             using (var r = File.OpenText(file))
             using (var bytes = new MemoryStream())
             using (var writer = new JsonTextWriter(new StreamWriter(bytes, encoding, 1024, leaveOpen: true)))
             {
+                string firstLine = r.ReadLine();
+                bool compactInput = JObject.Parse(firstLine)["@t"] != null;
+                Log.Information("Probed JSON log file {OriginalFilename} as {JsonKind}", fileName, compactInput ? "CompactJson" : "DefaultJson");
+
+                Func<JObject, JObject> eventProcessor = compactInput == compactOutput ? EventConverter.PassThrough : compactInput ? (Func<JObject, JObject>)EventConverter.ConvertToDefaultJson : EventConverter.ConvertToCompactJson;
+                Action<JObject, Dictionary<string, object>> propertyEnricher = compactOutput ? (Action<JObject, Dictionary<string, object>>)PropertyEnricher.AddPropertiesToCompactJson : PropertyEnricher.AddPropertiesToDefaultJson;
+
                 int line = 0;
-                for (var l = r.ReadLine(); l != null; l = r.ReadLine())
+                for (var l = firstLine; l != null; l = r.ReadLine())
                 {
                     line++;
 
